@@ -1,8 +1,8 @@
 """
-Neeman's Store Launch Agent
-============================
+Neeman's Store Launch Agent v2
+================================
 AI-powered campaign generator for hyperlocal retail store openings.
-Paste a city → get a complete Instagram launch campaign with visuals.
+Type a city → get a complete Instagram launch campaign with AI-generated visuals.
 """
 
 import streamlit as st
@@ -12,13 +12,13 @@ from datetime import datetime, timedelta
 
 from utils.brand_loader import load_brand_context
 from utils.helpers import export_campaign_markdown, export_campaign_docx
-from brand.context import TOP_CITIES
 from agents.researcher import research_city, format_research_markdown
 from agents.scraper import scrape_products
 from agents.campaign_generator import stream_campaign
 from agents.image_generator import (
     generate_batch,
     extract_image_prompts_from_campaign,
+    VISUAL_MODELS,
 )
 
 # ──────────────────────────────────────────────
@@ -67,14 +67,26 @@ st.markdown("""
 }
 .launch-card.accent { border-left-color: #C4603B; }
 
+.priority-card {
+    background: linear-gradient(135deg, #1B3A2D 0%, #2D5A42 100%);
+    border-radius: 12px;
+    padding: 20px 24px;
+    color: #F5F0E8;
+    margin: 10px 0;
+}
+.priority-card h3 { color: #C4603B; margin-top: 0; }
+
 /* Sidebar */
 section[data-testid="stSidebar"] { background-color: #1B3A2D; }
 section[data-testid="stSidebar"] .stMarkdown,
 section[data-testid="stSidebar"] p,
 section[data-testid="stSidebar"] span,
 section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] div,
 section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
-section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+section[data-testid="stSidebar"] [data-baseweb="select"] span,
+section[data-testid="stSidebar"] .stSelectbox label p {
     color: #F5F0E8 !important;
 }
 section[data-testid="stSidebar"] h3 {
@@ -126,6 +138,7 @@ _defaults = {
     "products_list": None,
     "products_live": False,
     "generation_step": None,
+    "visual_mode": "quick",
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -141,7 +154,7 @@ with st.sidebar:
         "letter-spacing:4px;margin-bottom:0'>N E E M A N ' S</h2>",
         unsafe_allow_html=True,
     )
-    st.caption("Store Launch Agent")
+    st.caption("Store Launch Agent v2")
 
     st.divider()
     st.markdown("### API Keys")
@@ -151,12 +164,31 @@ with st.sidebar:
         placeholder="sk-ant-api03-...",
         help="[Get a key](https://console.anthropic.com/)",
     )
-    together_key = st.text_input(
-        "Together AI Key",
-        type="password",
-        placeholder="tok-...",
-        help="[Get a key](https://api.together.ai/)",
+
+    st.divider()
+    st.markdown("### Visual Generation")
+    _visual_labels = {
+        "No visuals": "off",
+        "Quick — Flux Schnell (~$0.08)": "quick",
+        "Shoe+ Scenes — Kontext Pro (~$1.05)": "shoe_plus",
+    }
+    visual_choice = st.selectbox(
+        "Visual mode",
+        options=list(_visual_labels.keys()),
+        index=1,  # default to Quick
+        help="Quick = generic AI visuals. Shoe+ = uses actual product shoe in each scene.",
     )
+    visual_mode = _visual_labels[visual_choice]
+    visuals_on = visual_mode != "off"
+
+    together_key = ""
+    if visuals_on:
+        together_key = st.text_input(
+            "Together AI Key",
+            type="password",
+            placeholder="tok-...",
+            help="[Get a free key](https://api.together.ai/)",
+        )
 
     st.divider()
     st.markdown("### Brand Context")
@@ -169,7 +201,7 @@ with st.sidebar:
     st.markdown("### Products")
     # Load products
     if st.session_state["products_list"] is None:
-        with st.spinner("Scraping Neeman's..."):
+        with st.spinner("Scraping Neeman's bestsellers..."):
             prods, is_live = scrape_products()
             st.session_state["products_list"] = prods
             st.session_state["products_live"] = is_live
@@ -178,16 +210,18 @@ with st.sidebar:
     is_live = st.session_state["products_live"]
 
     if is_live:
-        st.success(f"Live: {len(prods)} products scraped")
+        bestseller_count = sum(1 for p in prods if p.get("is_bestseller"))
+        st.success(f"Live: {len(prods)} products ({bestseller_count} bestsellers)")
     else:
         st.warning(f"Fallback: {len(prods)} products (scraping failed)")
 
     # Product selection checkboxes
-    st.caption("Select products to feature:")
+    st.caption("Select products to feature (⭐ = bestseller):")
     selected = []
-    for i, p in enumerate(prods[:15]):
-        label = f"{p['name']} — ₹{p['price']:,}"
-        checked = st.checkbox(label, value=(i < 8), key=f"prod_{i}")
+    for i, p in enumerate(prods[:20]):
+        badge = "⭐ " if p.get("is_bestseller") else ""
+        label = f"{badge}{p['name']} — ₹{p['price']:,}"
+        checked = st.checkbox(label, value=(i < 10), key=f"prod_{i}")
         if checked:
             selected.append(p)
     st.session_state["selected_products"] = selected
@@ -200,7 +234,6 @@ with st.sidebar:
         ["claude-sonnet-4-20250514", "claude-haiku-4-20250514"],
         help="Sonnet = best quality. Haiku = fastest.",
     )
-    gen_images = st.toggle("Generate AI visuals", value=True, help="Uses Together AI (~$0.08)")
 
     st.divider()
     # Reset button
@@ -210,7 +243,7 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    st.caption("Neeman's Store Launch Agent v1.0")
+    st.caption("Neeman's Store Launch Agent v2.0")
     st.caption("Built with Claude API + Streamlit")
 
 
@@ -222,7 +255,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<p class="sub-header">Enter a city &rarr; get a complete hyperlocal Instagram launch campaign with AI-generated visuals.</p>',
+    '<p class="sub-header">Type any Indian city &rarr; get a complete hyperlocal Instagram launch campaign with AI-generated visuals.</p>',
     unsafe_allow_html=True,
 )
 
@@ -245,14 +278,11 @@ with tab_setup:
 
     col1, col2 = st.columns(2)
     with col1:
-        city = st.selectbox(
+        city = st.text_input(
             "City",
-            options=[""] + TOP_CITIES,
-            index=0,
-            placeholder="Select or type a city...",
+            placeholder="Any Indian city or town — e.g. Siliguri, Kozhikode, Udaipur...",
+            help="Type any city or town in India. No restrictions.",
         )
-        if not city:
-            city = st.text_input("Or type a city:", placeholder="e.g. Pune")
 
     with col2:
         area = st.text_input(
@@ -286,7 +316,7 @@ with tab_setup:
         st.info("Enter your Anthropic API key in the sidebar to get started.")
 
     if not city and api_key:
-        st.info("Select a city to generate a campaign.")
+        st.info("Type a city name to generate a campaign.")
 
     # ── GENERATION FLOW ──
     if go and city and api_key:
@@ -294,6 +324,7 @@ with tab_setup:
         st.session_state["area"] = area
         st.session_state["opening_date"] = str(opening_date)
         st.session_state["store_address"] = store_address
+        st.session_state["visual_mode"] = visual_mode
 
         # Clear previous results
         st.session_state["research_report"] = None
@@ -302,8 +333,8 @@ with tab_setup:
         st.session_state["generated_images"] = None
 
         # ── Step 1: Research ──
-        with st.status(f"🔍 Researching {city}...", expanded=True) as status:
-            st.write(f"Deep-diving into {city}'s culture, retail landscape, and consumer profile...")
+        with st.status(f"🔍 Researching {city} (culture, competitors, influencers)...", expanded=True) as status:
+            st.write(f"Deep-diving into {city}'s culture, retail landscape, competitor campaigns, and influencer ecosystem...")
             try:
                 report = research_city(
                     city, area, str(opening_date), api_key, model
@@ -351,21 +382,37 @@ with tab_setup:
         st.success(f"✅ Full campaign generated for {city}!")
 
         # ── Step 3: Image Generation ──
-        if gen_images and together_key:
-            with st.status("🎨 Generating AI visuals...", expanded=True) as img_status:
+        if visuals_on and together_key:
+            mode_label = VISUAL_MODELS.get(visual_mode, {}).get("label", "Flux")
+
+            # Get product shoe reference for Shoe+ mode
+            ref_image_url = None
+            if visual_mode == "shoe_plus" and st.session_state["selected_products"]:
+                for prod in st.session_state["selected_products"]:
+                    if prod.get("image_url"):
+                        ref_image_url = prod["image_url"]
+                        break
+
+            with st.status(f"🎨 Generating AI visuals with {mode_label}...", expanded=True) as img_status:
                 prompts = extract_image_prompts_from_campaign(full)
                 if prompts:
-                    st.write(f"Found {len(prompts)} image prompts. Generating...")
+                    st.write(f"Found {len(prompts)} image prompts. Generating with **{mode_label}**...")
                     progress = st.progress(0)
 
                     def _update(done, total):
                         progress.progress(done / total, text=f"Generating... {done}/{total}")
 
-                    results = generate_batch(prompts, together_key, progress_callback=_update)
+                    results = generate_batch(
+                        prompts,
+                        together_key,
+                        mode=visual_mode,
+                        ref_image_url=ref_image_url,
+                        progress_callback=_update,
+                    )
                     st.session_state["generated_images"] = results
                     success_count = sum(1 for r in results if r and r.get("image"))
                     img_status.update(
-                        label=f"✅ Generated {success_count}/{len(prompts)} visuals",
+                        label=f"✅ Generated {success_count}/{len(prompts)} visuals ({mode_label})",
                         state="complete",
                     )
                 else:
@@ -382,9 +429,9 @@ with tab_setup:
         c1, c2, c3, c4 = st.columns(4)
         steps = [
             ("1", "Enter city & date"),
-            ("2", "AI researches the city"),
+            ("2", "AI researches city + competitors"),
             ("3", "Full campaign generated"),
-            ("4", "AI visuals created"),
+            ("4", "AI visuals with real shoes"),
         ]
         for col, (num, label) in zip([c1, c2, c3, c4], steps):
             with col:
@@ -397,14 +444,16 @@ with tab_setup:
         st.markdown("")
         st.markdown("**What you get:**")
         st.markdown("""
-- 4 carousel concepts (24 slides with exact copy + visuals)
-- 5 reel storyboards (teaser, launch day, mini-doc, product drop, BTS)
+- 🔥 Top 5 priority deployment-ready concepts
+- 4 carousel concepts (24 slides with exact copy + AI visuals)
+- 5 reel storyboards (teaser, city pride, mini-doc, product drop, BTS)
 - 7-story Instagram arc (Day -3 to Day +1)
 - 6 ready-to-use captions (short, medium, long)
 - Full hashtag strategy (22+ hashtags)
-- Influencer brief with sample DMs
+- Real influencer recommendations with handles (nano, micro, mid)
+- Competitor campaign analysis + differentiation hooks
 - 20-item launch day content checklist
-- AI-generated visuals for hero slides
+- AI-generated visuals featuring actual Neeman's shoes
 """)
 
 
@@ -423,7 +472,6 @@ with tab_research:
         # Campaign strategy section (extract from campaign output)
         if st.session_state["campaign_output"]:
             st.markdown("---")
-            # Extract just the strategy section
             campaign = st.session_state["campaign_output"]
             strategy_match = re.search(
                 r"(# 1\. CAMPAIGN STRATEGY.*?)(?=# 2\.|$)",
@@ -438,39 +486,93 @@ with tab_research:
 
 
 # ═══════════════════════════════════════════════
+# HELPER: Match images to campaign sections
+# ═══════════════════════════════════════════════
+def _get_images_for_section(section_text: str, all_images: list[dict] | None) -> list[dict]:
+    """Find generated images whose prompts appear in this section."""
+    if not all_images or not section_text:
+        return []
+    matches = []
+    for img in all_images:
+        if not img or not img.get("image"):
+            continue
+        # Check if this image's prompt text overlaps with the section
+        prompt_words = set(img.get("prompt", "").lower().split()[:15])
+        section_lower = section_text.lower()
+        overlap = sum(1 for w in prompt_words if len(w) > 4 and w in section_lower)
+        if overlap >= 3:
+            matches.append(img)
+    return matches[:3]  # max 3 images per section
+
+
+# ═══════════════════════════════════════════════
 # TAB 3: CAMPAIGN ASSETS
 # ═══════════════════════════════════════════════
 with tab_campaign:
     if st.session_state["campaign_output"]:
         campaign = st.session_state["campaign_output"]
+        images = st.session_state.get("generated_images") or []
 
-        # Section definitions with regex patterns
+        # ── Priority Concepts (shown at top) ──
+        priority_match = re.search(
+            r"(# 2\. PRIORITY CONCEPTS.*?)(?=# 3\.|$)",
+            campaign,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if priority_match:
+            st.markdown(
+                '<div class="priority-card"><h3>🔥 Priority Concepts — Deploy These First</h3></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(priority_match.group(1))
+            st.markdown("---")
+
+        # ── Section definitions with regex patterns ──
         sections = [
-            ("📸 Carousel Concept 1: Grand Arrival", r"# 2\. CAROUSEL.*?(?=# 3\.|$)"),
-            ("📸 Carousel Concept 2: Lifestyle", r"# 3\. CAROUSEL.*?(?=# 4\.|$)"),
-            ("📸 Carousel Concept 3: Sustainability", r"# 4\. CAROUSEL.*?(?=# 5\.|$)"),
-            ("📸 Carousel Concept 4: Product Deep-Dive", r"# 5\. CAROUSEL.*?(?=# 6\.|$)"),
-            ("🎬 Reel 1: 15s Launch Teaser", r"# 6\. REEL.*?(?=# 7\.|$)"),
-            ("🎬 Reel 2: 30s City Pride", r"# 7\. REEL.*?(?=# 8\.|$)"),
-            ("🎬 Reel 3: 45s Mini-Documentary", r"# 8\. REEL.*?(?=# 9\.|$)"),
-            ("🎬 Reel 4: 20s Product Drop", r"# 9\. REEL.*?(?=# 10\.|$)"),
-            ("🎬 Reel 5: 30s BTS Tour", r"# 10\. REEL.*?(?=# 11\.|$)"),
-            ("📖 Stories Sequence", r"# 11\. INSTAGRAM.*?(?=# 12\.|$)"),
-            ("✍️ Caption Copy Bank", r"# 12\. CAPTION.*?(?=# 13\.|$)"),
-            ("#️⃣ Hashtag Strategy", r"# 13\. HASHTAG.*?(?=# 14\.|$)"),
-            ("🤝 Influencer Brief", r"# 14\. INFLUENCER.*?(?=# 15\.|$)"),
-            ("✅ Launch Day Checklist", r"# 15\. LAUNCH.*"),
+            ("📸 Carousel 1: Grand Arrival", r"# 3\. CAROUSEL.*?(?=# 4\.|$)", True),
+            ("📸 Carousel 2: Lifestyle", r"# 4\. CAROUSEL.*?(?=# 5\.|$)", True),
+            ("📸 Carousel 3: Sustainability", r"# 5\. CAROUSEL.*?(?=# 6\.|$)", True),
+            ("📸 Carousel 4: Product Deep-Dive", r"# 6\. CAROUSEL.*?(?=# 7\.|$)", True),
+            ("🎬 Reel 1: 15s Launch Teaser", r"# 7\. REEL.*?(?=# 8\.|$)", False),
+            ("🎬 Reel 2: 30s City Pride", r"# 8\. REEL.*?(?=# 9\.|$)", False),
+            ("🎬 Reel 3: 45s Mini-Documentary", r"# 9\. REEL.*?(?=# 10\.|$)", False),
+            ("🎬 Reel 4: 20s Product Drop", r"# 10\. REEL.*?(?=# 11\.|$)", False),
+            ("🎬 Reel 5: 30s BTS Tour", r"# 11\. REEL.*?(?=# 12\.|$)", False),
+            ("📖 Stories Sequence", r"# 12\. INSTAGRAM.*?(?=# 13\.|$)", False),
+            ("✍️ Caption Copy Bank", r"# 13\. CAPTION.*?(?=# 14\.|$)", False),
+            ("#️⃣ Hashtag Strategy", r"# 14\. HASHTAG.*?(?=# 15\.|$)", False),
+            ("🤝 Influencer Activation Plan", r"# 15\. INFLUENCER.*?(?=# 16\.|$)", False),
+            ("✅ Launch Day Checklist", r"# 16\. LAUNCH.*", False),
         ]
 
-        for title, pattern in sections:
+        for title, pattern, show_images in sections:
             match = re.search(pattern, campaign, re.DOTALL | re.IGNORECASE)
             if match:
-                with st.expander(title, expanded=False):
-                    st.markdown(match.group(0))
-                    # Copy button
+                section_text = match.group(0)
+                section_images = _get_images_for_section(section_text, images) if show_images else []
+
+                # Carousels expanded by default, others collapsed
+                is_carousel = "Carousel" in title
+                with st.expander(title, expanded=is_carousel):
+                    if section_images:
+                        # Side-by-side: images left, text right
+                        img_col, text_col = st.columns([1, 1.5])
+                        with img_col:
+                            for si, simg in enumerate(section_images):
+                                st.image(
+                                    simg["image"],
+                                    caption=f"AI Visual — {simg.get('label', f'Image {si+1}')}",
+                                    use_container_width=True,
+                                )
+                        with text_col:
+                            st.markdown(section_text)
+                    else:
+                        st.markdown(section_text)
+
+                    # Download section
                     st.download_button(
                         "📋 Download this section",
-                        data=match.group(0),
+                        data=section_text,
                         file_name=f"{title.split(':')[0].strip()}.md",
                         mime="text/markdown",
                         key=f"dl_{title}",
@@ -514,7 +616,6 @@ with tab_campaign:
                 st.button("DOCX export (install python-docx)", disabled=True, use_container_width=True)
 
         with col_exp3:
-            # View raw markdown
             with st.expander("View raw markdown"):
                 st.code(campaign, language="markdown")
     else:
@@ -530,7 +631,9 @@ with tab_visuals:
         success = [r for r in images if r and r.get("image")]
         failed = [r for r in images if r and not r.get("image")]
 
-        st.markdown(f"### Generated Visuals ({len(success)}/{len(images)})")
+        mode_used = st.session_state.get("visual_mode", "quick")
+        mode_label = VISUAL_MODELS.get(mode_used, {}).get("label", "Flux")
+        st.markdown(f"### Generated Visuals ({len(success)}/{len(images)}) — {mode_label}")
 
         # Grid layout — 2 columns
         cols = st.columns(2)
@@ -579,13 +682,28 @@ with tab_visuals:
             if st.button("🎨 Generate Visuals Now", type="primary"):
                 prompts = extract_image_prompts_from_campaign(st.session_state["campaign_output"])
                 if prompts:
+                    # Get shoe reference
+                    ref_image_url = None
+                    if visual_mode == "shoe_plus" and st.session_state["selected_products"]:
+                        for prod in st.session_state["selected_products"]:
+                            if prod.get("image_url"):
+                                ref_image_url = prod["image_url"]
+                                break
+
                     progress = st.progress(0, text="Generating visuals...")
 
                     def _update(done, total):
                         progress.progress(done / total, text=f"Generating... {done}/{total}")
 
-                    results = generate_batch(prompts, together_key, progress_callback=_update)
+                    results = generate_batch(
+                        prompts,
+                        together_key,
+                        mode=visual_mode,
+                        ref_image_url=ref_image_url,
+                        progress_callback=_update,
+                    )
                     st.session_state["generated_images"] = results
+                    st.session_state["visual_mode"] = visual_mode
                     progress.empty()
                     st.rerun()
                 else:

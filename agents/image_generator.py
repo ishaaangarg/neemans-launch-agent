@@ -1,42 +1,107 @@
 """
 Agent 4: Image Generator
 Together AI FLUX integration for generating campaign visuals.
+Supports two modes:
+  - Quick (FLUX.1-schnell): fast text-to-image (~$0.08 per batch)
+  - Shoe+ (FLUX.1-kontext-pro): image-to-image with real Neeman's shoe (~$1.05 per batch)
 """
 
 import base64
 import requests
 import concurrent.futures
 
+try:
+    from together import Together
+    HAS_SDK = True
+except ImportError:
+    HAS_SDK = False
+
+
+# ── Visual mode configs ──
+VISUAL_MODELS = {
+    "quick": {
+        "model": "black-forest-labs/FLUX.1-schnell",
+        "steps": 4,
+        "label": "Flux Schnell",
+        "supports_image_ref": False,
+    },
+    "shoe_plus": {
+        "model": "black-forest-labs/FLUX.1-kontext-pro",
+        "steps": 28,
+        "label": "Flux Kontext Pro",
+        "supports_image_ref": True,
+    },
+}
+
 
 def generate_image(
     prompt: str,
     api_key: str,
+    mode: str = "quick",
     width: int = 1024,
     height: int = 1024,
+    ref_image_url: str | None = None,
 ) -> tuple[bytes | None, str | None]:
     """
-    Generate one image via Together AI FLUX.1-schnell.
+    Generate one image via Together AI.
 
     Returns:
         (image_bytes, error_message) — image_bytes is None on failure.
     """
+    cfg = VISUAL_MODELS.get(mode, VISUAL_MODELS["quick"])
+
+    # ── SDK path (preferred) ──
+    if HAS_SDK:
+        try:
+            client = Together(api_key=api_key)
+            kwargs = dict(
+                model=cfg["model"],
+                prompt=prompt,
+                width=width,
+                height=height,
+                steps=cfg["steps"],
+                n=1,
+                response_format="b64_json",
+            )
+            # Kontext: pass the product shoe as reference image
+            if cfg["supports_image_ref"] and ref_image_url:
+                kwargs["image_url"] = ref_image_url
+
+            resp = client.images.generate(**kwargs)
+
+            if resp.data and resp.data[0].b64_json:
+                return base64.b64decode(resp.data[0].b64_json), None
+            # Fallback: if URL is returned instead
+            if resp.data and hasattr(resp.data[0], "url") and resp.data[0].url:
+                img_resp = requests.get(resp.data[0].url, timeout=30)
+                if img_resp.status_code == 200:
+                    return img_resp.content, None
+            return None, "No image data in response"
+        except Exception as e:
+            return None, str(e)
+
+    # ── Fallback: raw REST API (no SDK) ──
     try:
+        payload = {
+            "model": cfg["model"],
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "steps": cfg["steps"],
+            "n": 1,
+            "response_format": "b64_json",
+        }
+        if cfg["supports_image_ref"] and ref_image_url:
+            payload["image_url"] = ref_image_url
+
         resp = requests.post(
             "https://api.together.xyz/v1/images/generations",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": "black-forest-labs/FLUX.1-schnell",
-                "prompt": prompt,
-                "width": width,
-                "height": height,
-                "steps": 4,
-                "n": 1,
-                "response_format": "b64_json",
-            },
-            timeout=60,
+            json=payload,
+            timeout=90,
         )
 
         if resp.status_code != 200:
@@ -59,19 +124,31 @@ def generate_image(
         return None, str(e)
 
 
-def generate_carousel_image(prompt: str, api_key: str) -> tuple[bytes | None, str | None]:
-    """Generate a square carousel image (1080x1080 → 1024x1024 for FLUX)."""
-    return generate_image(prompt, api_key, width=1024, height=1024)
+def generate_carousel_image(
+    prompt: str,
+    api_key: str,
+    mode: str = "quick",
+    ref_image_url: str | None = None,
+) -> tuple[bytes | None, str | None]:
+    """Generate a square carousel image (1024x1024)."""
+    return generate_image(prompt, api_key, mode, 1024, 1024, ref_image_url)
 
 
-def generate_reel_image(prompt: str, api_key: str) -> tuple[bytes | None, str | None]:
-    """Generate a portrait reel frame (1080x1920 → 768x1344 for FLUX)."""
-    return generate_image(prompt, api_key, width=768, height=1344)
+def generate_reel_image(
+    prompt: str,
+    api_key: str,
+    mode: str = "quick",
+    ref_image_url: str | None = None,
+) -> tuple[bytes | None, str | None]:
+    """Generate a portrait reel frame (768x1344)."""
+    return generate_image(prompt, api_key, mode, 768, 1344, ref_image_url)
 
 
 def generate_batch(
     prompts: list[dict],
     api_key: str,
+    mode: str = "quick",
+    ref_image_url: str | None = None,
     progress_callback=None,
 ) -> list[dict]:
     """
@@ -80,6 +157,8 @@ def generate_batch(
     Args:
         prompts: list of {"label": str, "prompt": str, "format": "carousel"|"reel"}
         api_key: Together AI key
+        mode: "quick" or "shoe_plus"
+        ref_image_url: product image URL for shoe_plus mode
         progress_callback: fn(done, total) called after each image completes
 
     Returns:
@@ -89,13 +168,22 @@ def generate_batch(
 
     def _gen(idx):
         item = prompts[idx]
+        prompt = item["prompt"]
+
+        # For shoe_plus mode: prepend instruction for Kontext
+        if mode == "shoe_plus" and ref_image_url:
+            prompt = f"Place this Neeman's shoe in the following scene: {prompt}"
+
         if item["format"] == "reel":
-            img, err = generate_reel_image(item["prompt"], api_key)
+            img, err = generate_reel_image(prompt, api_key, mode, ref_image_url)
         else:
-            img, err = generate_carousel_image(item["prompt"], api_key)
+            img, err = generate_carousel_image(prompt, api_key, mode, ref_image_url)
         return idx, img, err
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    # Fewer workers for heavier Kontext model
+    max_w = 3 if mode == "shoe_plus" else 5
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_w) as executor:
         futures = {executor.submit(_gen, i): i for i in range(len(prompts))}
         done_count = 0
         for future in concurrent.futures.as_completed(futures):
@@ -134,8 +222,8 @@ def extract_image_prompts_from_campaign(campaign_text: str) -> list[dict]:
     prompts = []
     # Match various prompt label patterns
     patterns = [
-        r"(?:Image generation prompt|FLUX prompt|Image prompt|Visual prompt|Generation prompt)[:\s]*(.+?)(?=\n\n|\n\*\*|\n#{1,3} |\Z)",
-        r"\*\*(?:Image generation prompt|FLUX prompt)\*\*[:\s]*(.+?)(?=\n\n|\n\*\*|\n#{1,3} |\Z)",
+        r"(?:Image generation prompt|FLUX prompt|Image prompt|Visual prompt|Generation prompt)[:\s]*(.+?)(?=\n\n|\n\*\*|\n#{1,3} |\n-\s|\Z)",
+        r"\*\*(?:Image generation prompt|FLUX prompt)\*\*[:\s]*(.+?)(?=\n\n|\n\*\*|\n#{1,3} |\n-\s|\Z)",
     ]
 
     for pattern in patterns:
@@ -143,18 +231,20 @@ def extract_image_prompts_from_campaign(campaign_text: str) -> list[dict]:
         for m in matches:
             cleaned = m.strip().strip('"').strip("*").strip()
             if len(cleaned) > 30:  # Only meaningful prompts
-                prompts.append(cleaned)
+                # Avoid duplicates
+                if cleaned not in [p for p in prompts]:
+                    prompts.append(cleaned)
 
-    # Determine format based on context — check if prompt is near "reel" or "carousel" heading
+    # Determine format based on context
     result = []
+    # Find section boundaries to determine carousel vs reel
     for i, prompt in enumerate(prompts):
-        # Simple heuristic: first 4 are carousel, rest are reel
         label = f"Visual {i+1}"
         fmt = "carousel"
 
-        # Check if prompt text hints at reel
+        # Check if prompt text hints at reel/portrait
         lower = prompt.lower()
-        if any(w in lower for w in ["vertical", "portrait", "reel", "9:16", "story"]):
+        if any(w in lower for w in ["vertical", "portrait", "reel", "9:16", "story", "scene"]):
             fmt = "reel"
 
         result.append({
@@ -163,4 +253,4 @@ def extract_image_prompts_from_campaign(campaign_text: str) -> list[dict]:
             "format": fmt,
         })
 
-    return result[:10]  # Cap at 10 images
+    return result[:12]  # Cap at 12 images
