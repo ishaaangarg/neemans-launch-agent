@@ -78,20 +78,40 @@ st.markdown("""
 
 /* Sidebar */
 section[data-testid="stSidebar"] { background-color: #1B3A2D; }
-section[data-testid="stSidebar"] .stMarkdown,
-section[data-testid="stSidebar"] p,
-section[data-testid="stSidebar"] span,
-section[data-testid="stSidebar"] label,
-section[data-testid="stSidebar"] div,
+
+/* Sidebar text — labels, markdown, captions */
+section[data-testid="stSidebar"] .stMarkdown p,
+section[data-testid="stSidebar"] .stMarkdown li,
 section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
 section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
-section[data-testid="stSidebar"] [data-baseweb="select"] span,
-section[data-testid="stSidebar"] .stSelectbox label p {
+section[data-testid="stSidebar"] .stCheckbox label span,
+section[data-testid="stSidebar"] small,
+section[data-testid="stSidebar"] .stCaption p,
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
     color: #F5F0E8 !important;
 }
 section[data-testid="stSidebar"] h3 {
     color: #C4603B;
     font-family: 'Inter', sans-serif;
+}
+
+/* Selectbox: selected value text inside white input must be DARK */
+section[data-testid="stSidebar"] [data-baseweb="select"] [data-testid="stMarkdownContainer"] p,
+section[data-testid="stSidebar"] [data-baseweb="select"] span[class*="option"],
+section[data-testid="stSidebar"] [data-baseweb="select"] > div > div {
+    color: #1B3A2D !important;
+}
+
+/* Selectbox dropdown options — dark text on white popup */
+div[data-baseweb="popover"] li,
+div[data-baseweb="popover"] [role="option"],
+div[data-baseweb="popover"] [role="option"] span {
+    color: #1B3A2D !important;
+}
+
+/* Text input placeholders should be visible but muted */
+section[data-testid="stSidebar"] input::placeholder {
+    color: #a0a0a0 !important;
 }
 
 /* Step boxes */
