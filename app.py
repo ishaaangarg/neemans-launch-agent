@@ -189,14 +189,14 @@ with st.sidebar:
     st.markdown("### Visual Generation")
     _visual_labels = {
         "No visuals": "off",
-        "Quick — Flux Schnell (~$0.08)": "quick",
-        "Shoe+ Scenes — Kontext Pro (~$1.05)": "shoe_plus",
+        "Pro — FLUX 1.1 Pro (~$0.50)": "quick",
+        "Shoe+ Scenes — Kontext Pro (~$1.20)": "shoe_plus",
     }
     visual_choice = st.selectbox(
         "Visual mode",
         options=list(_visual_labels.keys()),
-        index=1,  # default to Quick
-        help="Quick = generic AI visuals. Shoe+ = uses actual product shoe in each scene.",
+        index=1,  # default to Pro
+        help="Pro = high-quality AI visuals. Shoe+ = uses actual product shoe in each scene via image-to-image.",
     )
     visual_mode = _visual_labels[visual_choice]
     visuals_on = visual_mode != "off"
@@ -251,8 +251,12 @@ with st.sidebar:
     st.markdown("### Settings")
     model = st.selectbox(
         "Claude Model",
-        ["claude-sonnet-4-20250514", "claude-haiku-4-20250514"],
-        help="Sonnet = best quality. Haiku = fastest.",
+        [
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "claude-haiku-4-20250514",
+        ],
+        help="Sonnet = best quality/cost. Opus = deepest research. Haiku = fastest.",
     )
 
     st.divider()

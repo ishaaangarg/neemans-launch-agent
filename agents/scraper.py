@@ -190,19 +190,54 @@ def scrape_products() -> tuple[list[dict], bool]:
 
 
 def products_to_prompt_text(products: list[dict]) -> str:
-    """Format selected products as text for Claude's prompt."""
-    lines = ["## Products Available for Campaign\n"]
+    """Format selected products as text for Claude's prompt.
+
+    Gives Claude rich product context so it can reference specific shoes by name,
+    describe their appearance accurately, and feature them in the right context.
+    """
+    lines = [
+        "## Products Available for Campaign\n",
+        "IMPORTANT: When creating content, ALWAYS reference products by their EXACT name and price.",
+        "Do NOT say 'Neeman's shoes' generically — say 'Begin Walk Glide in Ivory Brown (₹3,295)'.",
+        "Each carousel slide and reel scene should feature a SPECIFIC product.\n",
+    ]
     for i, p in enumerate(products, 1):
-        badge = " ⭐ BESTSELLER" if p.get("is_bestseller") else ""
+        badge = " ⭐ BESTSELLER — FEATURE PROMINENTLY" if p.get("is_bestseller") else ""
         lines.append(f"**{i}. {p['name']}**{badge}")
         lines.append(f"   - Category: {p['category']}")
         lines.append(f"   - Price: ₹{p['price']:,}")
         lines.append(f"   - Material: {p['material']}")
+        if p.get("available_sizes"):
+            lines.append(f"   - Available sizes: {', '.join(p['available_sizes'][:8])}")
         if p.get("url"):
             lines.append(f"   - URL: {p['url']}")
         if p.get("image_url"):
             lines.append(f"   - Product Image: {p['image_url']}")
         if p.get("description"):
             lines.append(f"   - Description: {p['description']}")
+
+        # Add visual description hints based on product name
+        name_lower = p['name'].lower()
+        visual_hints = []
+        if "brogues" in name_lower or "oxford" in name_lower:
+            visual_hints.append("formal/semi-formal shoe with brogue perforations and knit upper")
+        elif "slip on" in name_lower or "loafer" in name_lower:
+            visual_hints.append("slip-on style with no laces, clean minimal silhouette")
+        elif "glide" in name_lower or "glider" in name_lower:
+            visual_hints.append("sleek low-profile sneaker with smooth knit upper, lightweight sporty look")
+        elif "breeze" in name_lower:
+            visual_hints.append("ultra-breathable mesh sneaker, open-knit pattern visible")
+        elif "lite" in name_lower:
+            visual_hints.append("featherlight minimalist sneaker, thin sole, barely-there feel")
+        elif "whoosh" in name_lower or "purewhoosh" in name_lower:
+            visual_hints.append("high-tech cushioned sneaker with PureWhoosh sole technology, chunky yet light")
+        elif "walk" in name_lower:
+            visual_hints.append("everyday comfort sneaker with knit upper and cushioned sole")
+        elif "casual" in name_lower:
+            visual_hints.append("versatile casual shoe, works with jeans or chinos")
+        elif "minimal" in name_lower:
+            visual_hints.append("ultra-clean minimalist sneaker, no visible branding, zen-like simplicity")
+        if visual_hints:
+            lines.append(f"   - Visual appearance: {'; '.join(visual_hints)}")
         lines.append("")
     return "\n".join(lines)

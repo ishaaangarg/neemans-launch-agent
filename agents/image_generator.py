@@ -2,8 +2,8 @@
 Agent 4: Image Generator
 Together AI FLUX integration for generating campaign visuals.
 Supports two modes:
-  - Quick (FLUX.1-schnell): fast text-to-image (~$0.08 per batch)
-  - Shoe+ (FLUX.1-kontext-pro): image-to-image with real Neeman's shoe (~$1.05 per batch)
+  - Pro (FLUX1.1 Pro): high-quality text-to-image (~$0.50 per batch of 10)
+  - Shoe+ (FLUX.1-kontext-pro): image-to-image with real Neeman's shoe in scene
 """
 
 import base64
@@ -20,9 +20,9 @@ except ImportError:
 # ── Visual mode configs ──
 VISUAL_MODELS = {
     "quick": {
-        "model": "black-forest-labs/FLUX.1-schnell",
-        "steps": 4,
-        "label": "Flux Schnell",
+        "model": "black-forest-labs/FLUX1.1-pro",
+        "steps": 25,
+        "label": "FLUX 1.1 Pro",
         "supports_image_ref": False,
     },
     "shoe_plus": {
@@ -166,6 +166,14 @@ def generate_batch(
     """
     results = [None] * len(prompts)
 
+    # Quality prefix for Pro mode
+    QUALITY_PREFIX = (
+        "Ultra-high-quality professional advertising photograph, "
+        "shot on Canon EOS R5 with 85mm f/1.4 lens, "
+        "studio-grade lighting, sharp focus, commercial product photography, "
+        "clean modern aesthetic, premium brand feel. "
+    )
+
     def _gen(idx):
         item = prompts[idx]
         prompt = item["prompt"]
@@ -173,6 +181,9 @@ def generate_batch(
         # For shoe_plus mode: prepend instruction for Kontext
         if mode == "shoe_plus" and ref_image_url:
             prompt = f"Place this Neeman's shoe in the following scene: {prompt}"
+        elif mode == "quick":
+            # Add quality prefix for Pro mode text-to-image
+            prompt = f"{QUALITY_PREFIX}{prompt}"
 
         if item["format"] == "reel":
             img, err = generate_reel_image(prompt, api_key, mode, ref_image_url)

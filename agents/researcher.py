@@ -54,22 +54,23 @@ Output your research as a JSON object with this exact structure:
     "seasonal_context": "Any festivals, events, seasons near the opening date",
     "influencer_tier": "What kind of creator ecosystem exists — nano, micro, macro"
   },
-  "influencer_recommendations": {
-    "nano": [
-      {"handle": "@example_handle", "followers": "5K", "niche": "lifestyle/fashion/fitness/food", "city_based": true, "why": "Why this creator fits Neeman's launch in this city"},
-      {"handle": "@example_handle2", "followers": "8K", "niche": "sustainable living", "city_based": true, "why": "Reason"},
-      {"handle": "@example_handle3", "followers": "3K", "niche": "street style", "city_based": true, "why": "Reason"}
+  "influencer_strategy": {
+    "nano_profiles": [
+      {"profile_type": "e.g. College fashion blogger based in [city]", "follower_range": "3K-8K", "niche": "street style / campus fashion", "content_style": "Outfit-of-the-day reels, thrift finds", "search_keywords": "keywords to search on Instagram to find this type of creator in this city", "collab_idea": "What to ask them to create for Neeman's launch"},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."}
     ],
-    "micro": [
-      {"handle": "@example_handle", "followers": "50K", "niche": "fashion/lifestyle", "city_based": true, "why": "Reason"},
-      {"handle": "@example_handle2", "followers": "75K", "niche": "tech professional lifestyle", "city_based": true, "why": "Reason"},
-      {"handle": "@example_handle3", "followers": "30K", "niche": "sustainable fashion", "city_based": true, "why": "Reason"}
+    "micro_profiles": [
+      {"profile_type": "e.g. [City] lifestyle creator who posts about cafes, fashion, weekend plans", "follower_range": "15K-80K", "niche": "lifestyle/fashion", "content_style": "City guides, GRWM, brand collabs", "search_keywords": "keywords to search on Instagram", "collab_idea": "What to ask them to create"},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."}
     ],
-    "mid": [
-      {"handle": "@example_handle", "followers": "200K", "niche": "lifestyle/fashion", "city_based": true, "why": "Reason"},
-      {"handle": "@example_handle2", "followers": "150K", "niche": "city lifestyle", "city_based": true, "why": "Reason"},
-      {"handle": "@example_handle3", "followers": "300K", "niche": "fashion/beauty", "city_based": true, "why": "Reason"}
-    ]
+    "mid_profiles": [
+      {"profile_type": "e.g. Popular [city] fashion/lifestyle influencer", "follower_range": "100K-400K", "niche": "fashion/lifestyle", "content_style": "Brand partnerships, style hauls, event coverage", "search_keywords": "keywords to search on Instagram", "collab_idea": "What to ask them to create"},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."},
+      {"profile_type": "...", "follower_range": "...", "niche": "...", "content_style": "...", "search_keywords": "...", "collab_idea": "..."}
+    ],
+    "search_instructions": "Step-by-step instructions for the marketing team to FIND these creators on Instagram: what hashtags to search, what location tags to check, which discovery tools to use (e.g. search '[city] fashion' on Instagram, filter by Reels, sort by engagement)"
   },
   "reasoning": "Your strategic reasoning: WHY these angles work for Neeman's in THIS city. 200+ words. Include competitor differentiation strategy.",
   "raw_sources": ["List your knowledge sources or reference points"]
@@ -78,9 +79,9 @@ Output your research as a JSON object with this exact structure:
 
 IMPORTANT RULES:
 1. Return ONLY valid JSON. No markdown fences, no extra text before or after the JSON.
-2. For influencer_recommendations: suggest REAL Instagram creators who are actually active in this city. If you're unsure of exact handles, suggest the TYPE of creator with realistic handles based on the city's creator ecosystem. Prefer creators who post about lifestyle, fashion, sustainable living, or city life.
-3. For competitor_campaigns: think about what you've seen from Bata, Nike, Woodland, Allbirds store launches in India — what formats, what worked, what flopped.
-4. Content hooks should be scroll-stopping — think viral-first."""
+2. For influencer_strategy: DO NOT make up specific Instagram handles or usernames. You CANNOT know real handles. Instead, describe the PROFILE TYPE (e.g. "College street-style blogger based in Pune"), the content style, and give SEARCH KEYWORDS the marketing team can use to find these creators on Instagram. This is much more useful than hallucinated handles.
+3. For competitor_campaigns: think about what Bata, Nike, Woodland, Skechers, Allbirds do for store launches in India — what formats, what worked, what flopped. Be specific about content formats (GRWM reels, store-walkthrough, first-50-customers, city x brand mashup).
+4. Content hooks should be scroll-stopping — think viral-first. Reference what works for accounts like @snitch_offline (store launch reels, fit-check content, city-pride mashups)."""
 
 
 def research_city(
@@ -110,11 +111,12 @@ If an area is specified, go DEEP on that neighborhood — its reputation, who li
 
 Consider what's happening around the opening date — festivals, weather, college schedules, cricket season, etc.
 
-For influencer recommendations:
-- Suggest REAL Instagram creators active in {city}
-- 3-4 per tier: nano (1K-10K followers), micro (10K-100K), mid (100K-500K)
-- Focus on lifestyle, fashion, sustainable living, city life creators
-- Explain WHY each creator fits a Neeman's store launch
+For influencer strategy:
+- DO NOT invent or guess Instagram handles — they will be wrong
+- Instead describe the PROFILE TYPE for each tier (nano, micro, mid)
+- Give SEARCH KEYWORDS the team can use on Instagram to find each type
+- Describe their content style and what collab to propose for Neeman's launch
+- Think about what works for brands like Snitch (@snitch_offline) — city-pride content, GRWM at new store, fit-check reels
 
 For competitor analysis:
 - What shoe brands already operate in {city}?
@@ -272,24 +274,52 @@ def format_research_markdown(report: dict) -> str:
     lines.append(f"**Influencer tier:** {co.get('influencer_tier', '')}")
     lines.append("")
 
-    # Influencer recommendations
-    inf = report.get("influencer_recommendations", {})
+    # Influencer strategy (new format — profiles, not handles)
+    inf = report.get("influencer_strategy", {})
+    # Also support legacy format
+    if not inf:
+        inf = report.get("influencer_recommendations", {})
+
     if inf:
-        lines.append("### 🎯 Influencer Recommendations")
-        for tier, tier_label in [("nano", "Nano (1K-10K)"), ("micro", "Micro (10K-100K)"), ("mid", "Mid-tier (100K-500K)")]:
-            creators = inf.get(tier, [])
-            if creators:
-                lines.append(f"\n**{tier_label}:**")
-                lines.append("")
-                lines.append("| Handle | Followers | Niche | Why |")
-                lines.append("|--------|-----------|-------|-----|")
-                for c in creators:
-                    handle = c.get("handle", "")
-                    followers = c.get("followers", "")
-                    niche = c.get("niche", "")
-                    why = c.get("why", "")
-                    lines.append(f"| {handle} | {followers} | {niche} | {why} |")
-                lines.append("")
+        lines.append("### Influencer Strategy")
+
+        for tier_key, tier_label in [
+            ("nano_profiles", "Nano Creators (1K-10K)"),
+            ("micro_profiles", "Micro Creators (10K-100K)"),
+            ("mid_profiles", "Mid-tier Creators (100K-500K)"),
+            # Legacy keys
+            ("nano", "Nano Creators (1K-10K)"),
+            ("micro", "Micro Creators (10K-100K)"),
+            ("mid", "Mid-tier Creators (100K-500K)"),
+        ]:
+            profiles = inf.get(tier_key, [])
+            if not profiles:
+                continue
+            lines.append(f"\n**{tier_label}:**")
+            lines.append("")
+            for i, p in enumerate(profiles, 1):
+                if isinstance(p, dict):
+                    # New format
+                    ptype = p.get("profile_type", p.get("handle", ""))
+                    frange = p.get("follower_range", p.get("followers", ""))
+                    niche = p.get("niche", "")
+                    style = p.get("content_style", "")
+                    search = p.get("search_keywords", "")
+                    collab = p.get("collab_idea", p.get("why", ""))
+                    lines.append(f"**{i}. {ptype}** ({frange}, {niche})")
+                    if style:
+                        lines.append(f"   - Content style: {style}")
+                    if search:
+                        lines.append(f"   - Search on IG: *{search}*")
+                    if collab:
+                        lines.append(f"   - Collab idea: {collab}")
+                    lines.append("")
+
+        # Search instructions
+        search_inst = inf.get("search_instructions", "")
+        if search_inst:
+            lines.append(f"\n**How to find these creators:**\n{search_inst}")
+            lines.append("")
 
     lines.append("### Strategic Reasoning")
     lines.append(report.get("reasoning", ""))
